@@ -85,18 +85,34 @@ function loadData() {
     (res[1] || []).forEach(function (l) { state.listName[l.id] = l.name; });
 
     var cards = (res[2] || []).filter(function (c) { return !c.closed; });
-    state.nodes = cards.map(function (c) {
-      var lines = wrapText(c.name, 26, MAX_LINES);
-      return {
-        id: c.id, name: c.name, card: c, lines: lines,
-        h: PAD_TOP + lines.length * LINE_H + PAD_BOT,
-        x: null, y: null
-      };
+    var used = {};
+    cards.forEach(function (c) { used[c.idList] = true; });
+
+    state.nodes = [];
+
+    // uzly seznamů — hlavičky sloupců
+    (res[1] || []).forEach(function (l) {
+      if (!used[l.id]) return;
+      var lines = wrapText(l.name, 24, 2);
+      state.nodes.push({
+        id: 'l:' + l.id, kind: 'list', listId: l.id, name: l.name, card: null,
+        lines: lines, h: 14 + lines.length * LINE_H + PAD_BOT, x: null, y: null
+      });
     });
+
+    // uzly karet
+    cards.forEach(function (c) {
+      var lines = wrapText(c.name, 26, MAX_LINES);
+      state.nodes.push({
+        id: 'c:' + c.id, kind: 'card', listId: c.idList, name: c.name, card: c,
+        lines: lines, h: PAD_TOP + lines.length * LINE_H + PAD_BOT, x: null, y: null
+      });
+    });
+
     state.nodeById = {};
     state.nodes.forEach(function (n) { state.nodeById[n.id] = n; });
 
-    return Promise.all([loadPositions(), loadEdges()]);
+    return Promise.all([loadPositions(), loadListPositions(), loadEdges()]);
   }).then(function () {
     autoPlaceMissing();
     render();
@@ -108,12 +124,35 @@ function loadData() {
 }
 
 function loadPositions() {
-  var jobs = state.nodes.map(function (n) {
-    return t.get(n.id, 'shared', 'pos')
+  var jobs = state.nodes.filter(function (n) { return n.kind === 'card'; }).map(function (n) {
+    return t.get(n.card.id, 'shared', 'pos')
       .then(function (p) { if (p && typeof p.x === 'number') { n.x = p.x; n.y = p.y; } })
       .catch(function () {});
   });
   return Promise.all(jobs);
+}
+
+// Seznam není karta, plugin data se na něj uložit nedají — držíme je na boardu.
+function loadListPositions() {
+  return t.get('board', 'shared', 'listpos').then(function (map) {
+    if (!map) return;
+    state.nodes.forEach(function (n) {
+      if (n.kind !== 'list') return;
+      var p = map[n.listId];
+      if (p && typeof p.x === 'number') { n.x = p.x; n.y = p.y; }
+    });
+  }).catch(function () {});
+}
+
+function saveListPositions() {
+  var map = {};
+  state.nodes.forEach(function (n) {
+    if (n.kind === 'list' && n.x !== null) map[n.listId] = { x: n.x, y: n.y };
+  });
+  return t.set('board', 'shared', 'listpos', map).catch(function (err) {
+    console.error(err);
+    t.alert({ message: 'Pozici seznamu se nepodařilo uložit.', duration: 5 });
+  });
 }
 
 // Hrany jsou uložené na boardu, rozsekané do několika klíčů kvůli limitu 4096 znaků.
@@ -153,7 +192,8 @@ function saveEdges() {
 }
 
 function savePosition(n) {
-  return t.set(n.id, 'shared', 'pos', { x: n.x, y: n.y }).catch(function (err) {
+  if (n.kind === 'list') return saveListPositions();
+  return t.set(n.card.id, 'shared', 'pos', { x: n.x, y: n.y }).catch(function (err) {
     console.error(err);
     t.alert({ message: 'Pozici se nepodařilo uložit.', duration: 5 });
   });
@@ -162,16 +202,26 @@ function savePosition(n) {
 /* Karty bez uložené pozice se rozloží do sloupců podle seznamů. */
 function autoPlaceMissing() {
   var colY = {}, colIndex = {}, nextCol = 0;
-  var maxY = 0;
+
+  function column(lid) {
+    if (!(lid in colIndex)) { colIndex[lid] = nextCol++; colY[lid] = 0; }
+    return colIndex[lid];
+  }
+
+  // nejdřív hlavičky seznamů, ať sedí na začátku sloupce
   state.nodes.forEach(function (n) {
-    if (n.x !== null && n.y > maxY) maxY = n.y;
+    if (n.kind !== 'list' || n.x !== null) return;
+    var col = column(n.listId);
+    n.x = col * (NODE_W + COL_GAP);
+    n.y = colY[n.listId];
+    colY[n.listId] += n.h + ROW_GAP + 14;
   });
 
   state.nodes.forEach(function (n) {
-    if (n.x !== null) return;
-    var lid = n.card.idList || 'x';
-    if (!(lid in colIndex)) { colIndex[lid] = nextCol++; colY[lid] = 0; }
-    n.x = colIndex[lid] * (NODE_W + COL_GAP);
+    if (n.kind !== 'card' || n.x !== null) return;
+    var lid = n.listId || 'x';
+    var col = column(lid);
+    n.x = col * (NODE_W + COL_GAP);
     n.y = colY[lid];
     colY[lid] += n.h + ROW_GAP;
   });
@@ -180,9 +230,24 @@ function autoPlaceMissing() {
 function arrangeAll() {
   state.nodes.forEach(function (n) { n.x = null; });
   autoPlaceMissing();
+
+  // hlavička seznamu se propojí se svými kartami, pokud tam spojnice ještě není
+  state.nodes.forEach(function (n) {
+    if (n.kind !== 'card') return;
+    var lnode = state.nodeById['l:' + n.listId];
+    if (!lnode) return;
+    var exists = state.edges.some(function (e) {
+      return (e.f === lnode.id && e.t === n.id) || (e.f === n.id && e.t === lnode.id);
+    });
+    if (!exists) state.edges.push({ f: lnode.id, fh: 'b', t: n.id, th: 'tp' });
+  });
+
   render();
-  setStatus('Srovnáno — ukládám pozice…');
-  Promise.all(state.nodes.map(savePosition)).then(function () {
+  setStatus('Srovnáno — ukládám…');
+  var jobs = state.nodes.filter(function (n) { return n.kind === 'card'; }).map(savePosition);
+  jobs.push(saveListPositions());
+  jobs.push(saveEdges());
+  Promise.all(jobs).then(function () {
     updateStatus();
     fitToScreen();
   });
@@ -249,17 +314,22 @@ function nodeEl(n) {
     fill: style.fill, stroke: style.stroke, 'stroke-width': style.strokeWidth || 1.5
   }));
 
-  var lname = state.listName[n.card.idList];
-  if (lname) {
-    var lt = svgEl('text', { x: 14, y: 17, 'class': 'node-list' });
-    lt.textContent = trimTo(lname, 26).toUpperCase();
-    g.appendChild(lt);
+  if (n.kind === 'card') {
+    var lname = state.listName[n.listId];
+    if (lname) {
+      var lt = svgEl('text', { x: 14, y: 17, 'class': 'node-list' });
+      lt.textContent = trimTo(lname, 26).toUpperCase();
+      g.appendChild(lt);
+    }
   }
 
+  var top = (n.kind === 'list') ? 14 : PAD_TOP;
   n.lines.forEach(function (line, i) {
     var text = svgEl('text', {
-      x: 14, y: PAD_TOP + LINE_H * (i + 0.75),
-      'class': 'node-label', fill: style.text
+      x: 14, y: top + LINE_H * (i + 0.75),
+      'class': 'node-label', fill: style.text,
+      'font-weight': style.bold ? 700 : 500,
+      'font-size': style.bold ? 14 : 13
     });
     text.textContent = line;
     g.appendChild(text);
@@ -283,15 +353,20 @@ function nodeEl(n) {
     startNodeDrag(n, ev);
   });
 
-  g.addEventListener('dblclick', function (ev) {
-    ev.stopPropagation();
-    openCard(n.card);
-  });
+  if (n.kind === 'card') {
+    g.addEventListener('dblclick', function (ev) {
+      ev.stopPropagation();
+      openCard(n.card);
+    });
+  }
 
   return g;
 }
 
 function nodeStyle(n) {
+  if (n.kind === 'list') {
+    return { fill: BRAND.green, stroke: BRAND.green, text: BRAND.dark, strokeWidth: 2, bold: true };
+  }
   if (state.colorByLabel && n.card.labels && n.card.labels.length) {
     var c = LABEL_COLORS[n.card.labels[0].color] || BRAND.blue;
     return { fill: '#fff', stroke: c, text: BRAND.dark, strokeWidth: 3 };
@@ -548,13 +623,13 @@ function fitToScreen() {
 }
 
 function focusOn(cardId) {
-  var n = state.nodeById[cardId];
+  var n = state.nodeById['c:' + cardId] || state.nodeById[cardId];
   if (!n) { fitToScreen(); return; }
   var rect = el.wrap.getBoundingClientRect();
   state.view.k = 1;
   state.view.x = rect.width / 2 - n.x - NODE_W / 2;
   state.view.y = rect.height / 2 - n.y - n.h / 2;
-  state.selected = cardId;
+  state.selected = n.id;
   el.btnDelete.disabled = false;
   applyView();
   highlightSelection();
@@ -615,7 +690,8 @@ function plural(n, one, few, many) {
 function setStatus(msg) { el.status.textContent = msg; }
 
 function updateStatus() {
-  setStatus(plural(state.nodes.length, 'karta', 'karty', 'karet') + ' · ' +
+  var cardCount = state.nodes.filter(function (n) { return n.kind === 'card'; }).length;
+  setStatus(plural(cardCount, 'karta', 'karty', 'karet') + ' · ' +
             plural(state.edges.length, 'spojnice', 'spojnice', 'spojnic'));
 }
 
