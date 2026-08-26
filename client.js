@@ -3,20 +3,18 @@
 // Základní URL Power-Upu — odvozená z adresy tohoto iframu.
 var BASE = window.location.href.replace(/\/[^\/]*(\?.*)?$/, '/');
 var ICON = BASE + 'icon.svg';
+var MAPA = './mapa.html?v=1';
 
 TrelloPowerUp.initialize({
 
-  // Tlačítko vpravo nahoře nad boardem — otevře mapu přes celou obrazovku
+  // Tlačítko vpravo nahoře nad boardem
   'board-buttons': function (t) {
     return [{
-      icon: {
-        dark: ICON,
-        light: ICON
-      },
+      icon: { dark: ICON, light: ICON },
       text: 'Myšlenková mapa',
       callback: function (t) {
         return t.modal({
-          url: './mindmap.html',
+          url: MAPA,
           fullscreen: true,
           title: 'Myšlenková mapa'
         });
@@ -24,9 +22,7 @@ TrelloPowerUp.initialize({
     }];
   },
 
-  // Tlačítko v detailu karty — otevře mapu a vycentruje ji na tuhle kartu.
-  // Kontext bereme synchronně přes getContext(), protože uvnitř .then()
-  // Power-Up ztrácí kontext a modal se pak neotevře.
+  // Tlačítko v detailu karty — otevře mapu a vycentruje ji na tuhle kartu
   'card-buttons': function (t) {
     return [{
       icon: ICON,
@@ -34,7 +30,7 @@ TrelloPowerUp.initialize({
       callback: function (t) {
         var ctx = t.getContext() || {};
         return t.modal({
-          url: './mindmap.html',
+          url: MAPA,
           args: { focus: ctx.card || '' },
           fullscreen: true,
           title: 'Myšlenková mapa'
