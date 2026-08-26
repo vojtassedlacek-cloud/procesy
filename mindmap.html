@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Myšlenková mapa</title>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <script src="https://p.trellocdn.com/power-up.min.js"></script>
+  <style>
+    :root {
+      --brand-green: #bfd630;
+      --brand-dark:  #3d3f47;
+      --brand-pink:  #e50751;
+      --brand-blue:  #5bc2fd;
+      --brand-brown: #47423e;
+      --bg:          #ffffff;
+      --bg-alt:      #f5f5f5;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; height: 100%; overflow: hidden;
+      font-family: 'Figtree', system-ui, -apple-system, sans-serif;
+      color: var(--brand-dark);
+      background: var(--bg);
+    }
+    #app { display: flex; flex-direction: column; height: 100%; }
+
+    /* --- ovládací lišta --- */
+    #toolbar {
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      padding: 10px 14px;
+      background: var(--bg-alt);
+      border-bottom: 2px solid var(--brand-green);
+      font-size: 13px;
+      flex: 0 0 auto;
+    }
+    #toolbar label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+    .sep { width: 1px; height: 22px; background: #d5d5d5; }
+    button {
+      font-family: inherit; font-size: 13px; font-weight: 500;
+      padding: 6px 12px; border-radius: 4px; cursor: pointer;
+      border: 1px solid #ccc; background: #fff; color: var(--brand-dark);
+    }
+    button:hover { background: #eee; }
+    button.primary { background: var(--brand-green); border-color: var(--brand-green); font-weight: 700; }
+    button.primary:hover { filter: brightness(0.94); }
+    select { font-family: inherit; font-size: 13px; padding: 5px 8px; border-radius: 4px; border: 1px solid #ccc; }
+    #status { margin-left: auto; font-size: 12px; color: var(--brand-brown); }
+
+    /* --- plátno --- */
+    #canvas-wrap { flex: 1 1 auto; position: relative; overflow: hidden; background: var(--bg); cursor: grab; }
+    #canvas-wrap.panning { cursor: grabbing; }
+    #canvas-wrap.linking { cursor: crosshair; }
+    svg { width: 100%; height: 100%; display: block; }
+
+    .node-box { cursor: pointer; }
+    .node-box rect { transition: filter .12s; }
+    .node-box:hover rect { filter: brightness(0.93); }
+    .node-box.selected rect { stroke: var(--brand-pink); stroke-width: 3; }
+    .node-label { font-size: 13px; font-weight: 500; pointer-events: none; user-select: none; }
+    .edge { fill: none; stroke: #c3c6cc; stroke-width: 2; }
+
+    /* --- hint lišta dole --- */
+    #hint {
+      position: absolute; left: 0; right: 0; bottom: 0;
+      padding: 8px 14px; font-size: 12px;
+      background: rgba(61,63,71,0.92); color: #fff;
+      display: none; align-items: center; gap: 12px;
+    }
+    #hint.show { display: flex; }
+    #hint button { background: transparent; color: #fff; border-color: rgba(255,255,255,.5); }
+    #hint button:hover { background: rgba(255,255,255,.15); }
+
+    #empty {
+      position: absolute; inset: 0; display: none;
+      align-items: center; justify-content: center; text-align: center;
+      font-size: 14px; color: var(--brand-brown); padding: 40px;
+    }
+    #empty.show { display: flex; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="toolbar">
+      <label>
+        Struktura:
+        <select id="mode">
+          <option value="lists">Podle seznamů</option>
+          <option value="custom">Vlastní vazby</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="opt-checklists"> Checklisty jako větve</label>
+      <label><input type="checkbox" id="opt-labels"> Barvit podle štítků</label>
+      <div class="sep"></div>
+      <button id="btn-fit">Vycentrovat</button>
+      <button id="btn-reload">Načíst znovu</button>
+      <button id="btn-export">Stáhnout SVG</button>
+      <span id="status">Načítám…</span>
+    </div>
+
+    <div id="canvas-wrap">
+      <svg id="svg" xmlns="http://www.w3.org/2000/svg">
+        <g id="viewport">
+          <g id="edges"></g>
+          <g id="nodes"></g>
+        </g>
+      </svg>
+      <div id="empty">Na boardu nejsou žádné karty, ze kterých by šla mapa poskládat.</div>
+      <div id="hint">
+        <span id="hint-text"></span>
+        <button id="hint-cancel">Zrušit</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="./mindmap.js"></script>
+</body>
+</html>
