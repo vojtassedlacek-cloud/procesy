@@ -5,7 +5,7 @@
    SEM VLOŽ SVŮJ API KLÍČ z trello.com/power-ups/admin (záložka API Key).
    Bez něj mapa funguje dál, jen nepůjde měnit karty z mapy.
    =================================================================== */
-var APP_KEY = 'SEM_VLOZ_KLIC';
+var APP_KEY = 'be7471c1d3d2a02ceac38925608ce2ef';
 
 var t = window.TrelloPowerUp.iframe({
   appKey: APP_KEY,
