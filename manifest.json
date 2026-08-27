@@ -1,0 +1,17 @@
+{
+  "name": "Myšlenková mapa",
+  "details": "Zobrazí obsah boardu jako myšlenkovou mapu. Umí automatickou hierarchii podle seznamů nebo vlastní vazby mezi kartami, které se ukládají přímo do Trella.",
+  "author": "Dobré podlahy / BRASED EUROTEXTIL CZ",
+  "icon": {
+    "url": "./icon.svg"
+  },
+  "capabilities": [
+    "board-buttons",
+    "card-buttons"
+  ],
+  "connectors": {
+    "iframe": {
+      "url": "./index.html"
+    }
+  }
+}

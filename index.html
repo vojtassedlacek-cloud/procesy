@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <title>Myšlenková mapa – connector</title>
+  <script src="https://p.trellocdn.com/power-up.min.js"></script>
+</head>
+<body>
+  <script>
+    // Časové razítko brání prohlížeči použít starou verzi z cache.
+    (function () {
+      var s = document.createElement('script');
+      s.src = './client.js?t=' + Date.now();
+      document.body.appendChild(s);
+    })();
+  </script>
+</body>
+</html>
