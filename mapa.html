@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Myšlenková mapa</title>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <script src="https://p.trellocdn.com/power-up.min.js"></script>
+  <style>
+    :root {
+      --brand-green: #bfd630;
+      --brand-dark:  #3d3f47;
+      --brand-pink:  #e50751;
+      --brand-blue:  #5bc2fd;
+      --brand-brown: #47423e;
+      --bg:          #ffffff;
+      --bg-alt:      #f5f5f5;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; height: 100%; overflow: hidden;
+      font-family: 'Figtree', system-ui, -apple-system, sans-serif;
+      color: var(--brand-dark);
+      background: var(--bg);
+    }
+    #app { display: flex; flex-direction: column; height: 100%; }
+
+    #toolbar {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      padding: 10px 14px;
+      background: var(--bg-alt);
+      border-bottom: 2px solid var(--brand-green);
+      font-size: 13px;
+      flex: 0 0 auto;
+    }
+    #toolbar label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+    .sep { width: 1px; height: 22px; background: #d5d5d5; }
+    button {
+      font-family: inherit; font-size: 13px; font-weight: 500;
+      padding: 6px 12px; border-radius: 4px; cursor: pointer;
+      border: 1px solid #ccc; background: #fff; color: var(--brand-dark);
+    }
+    button:hover { background: #eee; }
+    button:disabled { opacity: .45; cursor: default; }
+    #status { margin-left: auto; font-size: 12px; color: var(--brand-brown); }
+
+    #map-name {
+      font-size: 15px; font-weight: 900; color: var(--brand-dark);
+      background: var(--brand-green); padding: 5px 12px; border-radius: 5px;
+    }
+    #map-name:empty { display: none; }
+
+    .save-trello {
+      background: var(--brand-green); border-color: #a8bd22; font-weight: 700;
+    }
+    .save-trello:disabled { background: #eee; border-color: #ddd; }
+
+    #palette {
+      position: absolute; display: none; gap: 4px; align-items: center;
+      padding: 6px 7px; background: #fff; border: 1.5px solid #e2e6ea;
+      border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.14);
+      z-index: 5;
+    }
+    #palette.show { display: flex; }
+    .swatch {
+      width: 20px; height: 20px; padding: 0; border-radius: 4px;
+      border: 1.5px solid #ccc; cursor: pointer;
+    }
+    .swatch:hover { transform: scale(1.15); }
+
+    #canvas-wrap {
+      flex: 1 1 auto; position: relative; overflow: hidden;
+      background-color: #fbfbfc;
+      background-image: radial-gradient(#dcdfe4 1px, transparent 1px);
+      background-size: 18px 18px;
+      cursor: grab;
+    }
+    #canvas-wrap.panning { cursor: grabbing; }
+    #canvas-wrap.linking { cursor: crosshair; }
+    svg { width: 100%; height: 100%; display: block; }
+
+    .node { cursor: move; }
+    .node rect.body { transition: filter .1s; }
+    .node:hover rect.body { filter: brightness(0.97); }
+    .node.drop-target rect.body { stroke: var(--brand-pink) !important; stroke-width: 3 !important; }
+    .node.selected rect.body { stroke: var(--brand-blue) !important; stroke-width: 3 !important; }
+    .node-label { font-size: 14.5px; font-weight: 500; pointer-events: none; user-select: none; }
+    .node-head  { font-size: 26px; font-weight: 900; pointer-events: none; user-select: none; }
+
+    .frame-box { cursor: move; }
+    .frame-box rect.fbody { fill: rgba(0,0,0,0.02); stroke: #c3c6cc; stroke-width: 2; stroke-dasharray: 8 5; }
+    .frame-box.selected rect.fbody { stroke: var(--brand-blue); stroke-dasharray: none; }
+    .frame-title { font-size: 15px; font-weight: 900; fill: #8b9099; pointer-events: none; user-select: none; }
+    .frame-resize { fill: #fff; stroke: var(--brand-blue); stroke-width: 2; cursor: nwse-resize; opacity: 0; }
+    .frame-box:hover .frame-resize, .frame-box.selected .frame-resize { opacity: 1; }
+    .node-list  { font-size: 11px; font-weight: 700; fill: #98a0aa; pointer-events: none; user-select: none; letter-spacing: .04em; }
+    .node-badges{ font-size: 10.5px; font-weight: 500; pointer-events: none; user-select: none; }
+
+    .handle {
+      fill: #fff; stroke: var(--brand-green); stroke-width: 2;
+      opacity: 0; transition: opacity .12s;
+      pointer-events: none;          /* klik patří terči pod ním */
+    }
+    .node:hover .handle, .node.selected .handle, .node.drop-target .handle { opacity: 1; }
+    .handle-hit { cursor: crosshair; pointer-events: all; }
+
+    .edge { fill: none; stroke: #9aa3ad; stroke-width: 2; }
+    .edge-hit { fill: none; stroke: transparent; stroke-width: 16; cursor: pointer; }
+    #temp-edge { fill: none; stroke: var(--brand-pink); stroke-width: 2.5; stroke-dasharray: 6 4; pointer-events: none; }
+
+    #hint {
+      position: absolute; left: 0; right: 0; bottom: 0;
+      padding: 8px 14px; font-size: 12px;
+      background: rgba(61,63,71,0.92); color: #fff;
+      display: none; align-items: center; gap: 12px;
+    }
+    #hint.show { display: flex; }
+
+    #cardedit {
+      position: absolute; display: none; z-index: 6;
+      width: 300px; padding: 14px; background: #fff;
+      border: 1.5px solid #e2e6ea; border-radius: 9px;
+      box-shadow: 0 8px 26px rgba(0,0,0,.18);
+      font-size: 13px;
+    }
+    #cardedit.show { display: block; }
+    .ce-head { display: flex; align-items: center; margin-bottom: 10px; }
+    .ce-head strong { flex: 1; font-size: 14px; }
+    .ce-x { border: none; background: transparent; font-size: 15px; padding: 2px 6px; cursor: pointer; }
+    .ce-l { display: block; font-size: 11px; font-weight: 700; color: #8b9099;
+            text-transform: uppercase; letter-spacing: .04em; margin: 10px 0 4px; }
+    .ce-in { width: 100%; font-family: inherit; font-size: 13px; padding: 7px 9px;
+             border: 1.5px solid #d5dae0; border-radius: 5px; outline: none; }
+    .ce-in:focus { border-color: var(--brand-green); }
+    .ce-row { display: flex; gap: 6px; align-items: center; }
+    .ce-row .ce-in { flex: 1; }
+    .ce-labels { display: flex; flex-wrap: wrap; gap: 5px; }
+    .ce-lab {
+      padding: 5px 9px; border-radius: 5px; font-size: 11.5px; font-weight: 700;
+      color: #fff; border: 2px solid transparent; cursor: pointer; opacity: .45;
+    }
+    .ce-lab.on { opacity: 1; border-color: var(--brand-dark); }
+    .ce-foot { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+    .ce-primary {
+      background: var(--brand-green); border-color: #a8bd22; font-weight: 900;
+      font-size: 14px; padding: 9px 16px;
+    }
+    .ce-small { font-size: 12px; padding: 5px 9px; }
+    .ce-status { font-size: 11.5px; color: #8b9099; }
+
+    #textedit {
+      position: absolute; display: none; z-index: 6;
+      width: 290px; padding: 14px; background: #fff;
+      border: 1.5px solid #e2e6ea; border-radius: 9px;
+      box-shadow: 0 8px 26px rgba(0,0,0,.18); font-size: 13px;
+    }
+    #textedit.show { display: block; }
+    .ce-note { font-weight: 500; text-transform: none; letter-spacing: 0; color: #b0b6bd; }
+    .te-size.on { background: var(--brand-green); border-color: #a8bd22; font-weight: 700; }
+
+    #editor {
+      position: absolute; display: none;
+      font-family: 'Figtree', system-ui, sans-serif; font-size: 13px; font-weight: 500;
+      padding: 9px 12px; border: 2px solid var(--brand-blue); border-radius: 8px;
+      resize: none; outline: none; overflow: hidden; line-height: 1.3;
+      box-shadow: 0 4px 14px rgba(0,0,0,.15);
+    }
+    #editor.show { display: block; }
+
+    #legend {
+      position: absolute; left: 14px; bottom: 12px;
+      font-size: 11px; color: #98a0aa; pointer-events: none;
+    }
+
+    #chooser {
+      position: absolute; inset: 0; background: #fff; overflow: auto;
+      display: none; padding: 34px 40px;
+    }
+    #chooser.show { display: block; }
+    .chooser-inner { max-width: 860px; margin: 0 auto; }
+    #chooser h2 { margin: 0 0 4px; font-size: 24px; font-weight: 900; }
+    #chooser h3 { margin: 30px 0 10px; font-size: 14px; font-weight: 700; color: var(--brand-brown); }
+    #chooser .sub { margin: 0 0 22px; font-size: 13px; color: #8b9099; }
+
+    .map-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 14px; border: 1.5px solid #e2e6ea; border-radius: 7px; margin-bottom: 8px;
+    }
+    .map-row:hover { border-color: var(--brand-green); }
+    .map-row .nm { flex: 1; font-weight: 700; font-size: 14px; }
+    .map-row .meta { font-size: 11.5px; color: #98a0aa; margin-right: 6px; }
+    .empty-note { font-size: 13px; color: #98a0aa; padding: 6px 0 2px; }
+
+    .tpl-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .tpl {
+      flex: 1 1 220px; text-align: left; padding: 14px;
+      border: 1.5px solid #e2e6ea; border-radius: 7px; background: #fff; cursor: pointer;
+    }
+    .tpl:hover { border-color: var(--brand-green); background: #fbfdf2; }
+    .tpl strong { display: block; font-size: 14px; margin-bottom: 4px; }
+    .tpl span { font-size: 12px; color: #8b9099; line-height: 1.35; }
+
+    #empty {
+      position: absolute; inset: 0; display: none;
+      align-items: center; justify-content: center; text-align: center;
+      font-size: 14px; color: var(--brand-brown); padding: 40px;
+    }
+    #empty.show { display: flex; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="toolbar">
+      <button id="btn-maps">☰ Mapy</button>
+      <strong id="map-name"></strong>
+      <div class="sep"></div>
+      <button id="btn-text">+ Text</button>
+      <button id="btn-head">+ Nadpis</button>
+      <button id="btn-frame">+ Rámec</button>
+      <button id="btn-arrange">Srovnat do mřížky</button>
+      <div class="sep"></div>
+      <button id="btn-save-trello" class="save-trello" disabled>💾 Uložit do Trella</button>
+      <button id="btn-delete" disabled>Smazat spojnice uzlu</button>
+      <label><input type="checkbox" id="opt-labels"> Barvit podle štítků</label>
+      <div class="sep"></div>
+      <button id="btn-reload">Načíst znovu</button>
+      <button id="btn-export">Stáhnout SVG</button>
+      <span id="status">Načítám…</span>
+    </div>
+
+    <div id="canvas-wrap">
+      <svg id="svg" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#9aa3ad"></path>
+          </marker>
+        </defs>
+        <g id="viewport">
+          <g id="frames"></g>
+          <g id="edges"></g>
+          <g id="nodes"></g>
+          <path id="temp-edge"></path>
+        </g>
+      </svg>
+      <div id="legend">Táhni uzel kamkoli · z kroužku táhni spojnici · dvojklik: karta se upraví, text se přepíše · rámec se roztahuje za pravý dolní roh</div>
+      <div id="empty">Na boardu nejsou žádné karty.</div>
+      <div id="palette"></div>
+
+      <div id="cardedit">
+        <div class="ce-head">
+          <strong id="ce-title">Karta</strong>
+          <button id="ce-close" class="ce-x">✕</button>
+        </div>
+        <label class="ce-l">Název</label>
+        <input id="ce-name" type="text" class="ce-in">
+        <label class="ce-l">Termín</label>
+        <div class="ce-row">
+          <input id="ce-due" type="date" class="ce-in">
+          <button id="ce-due-clear" class="ce-small">Zrušit termín</button>
+        </div>
+        <label class="ce-l">Štítky</label>
+        <div id="ce-labels" class="ce-labels"></div>
+        <div class="ce-foot">
+          <button id="ce-save" class="ce-primary">Uložit do Trella</button>
+          <button id="ce-open" class="ce-small">Otevřít v Trellu</button>
+          <span id="ce-status" class="ce-status"></span>
+        </div>
+      </div>
+      <div id="textedit">
+        <div class="ce-head">
+          <strong>Vlastní uzel</strong>
+          <button id="te-close" class="ce-x">✕</button>
+        </div>
+        <label class="ce-l">Text</label>
+        <textarea id="te-text" class="ce-in" rows="3"></textarea>
+        <label class="ce-l">Velikost písma</label>
+        <div class="ce-row">
+          <button class="ce-small te-size" data-size="s">Malé</button>
+          <button class="ce-small te-size" data-size="m">Střední</button>
+          <button class="ce-small te-size" data-size="l">Velké</button>
+        </div>
+        <label class="ce-l">Poznámka / datum <span class="ce-note">(jen v mapě)</span></label>
+        <input id="te-note" type="text" class="ce-in" placeholder="např. do 15. 9. nebo Priorita A">
+        <div class="ce-foot">
+          <button id="te-apply" class="ce-primary">Použít</button>
+          <button id="te-delete" class="ce-small">Smazat uzel</button>
+        </div>
+      </div>
+
+      <textarea id="editor" spellcheck="false"></textarea>
+      <div id="hint"><span id="hint-text"></span></div>
+
+      <div id="chooser">
+        <div class="chooser-inner">
+          <h2>Myšlenkové mapy</h2>
+          <p class="sub">Vyber uloženou mapu, nebo si založ novou.</p>
+          <div id="map-list"></div>
+          <h3>Nová mapa</h3>
+          <div class="tpl-row">
+            <button class="tpl" data-tpl="lists">
+              <strong>Podle seznamů</strong>
+              <span>Hlavička seznamu a pod ní jeho karty, propojené šipkami</span>
+            </button>
+            <button class="tpl" data-tpl="flow">
+              <strong>Procesní řetěz</strong>
+              <span>Karty v řadě za sebou, propojené podle pořadí</span>
+            </button>
+            <button class="tpl" data-tpl="grid">
+              <strong>Prázdná plocha</strong>
+              <span>Karty v mřížce, spojnice si nakreslíš sám</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Časové razítko brání prohlížeči použít starou verzi z cache.
+    (function () {
+      var s = document.createElement('script');
+      s.src = './mapa.js?t=' + Date.now();
+      document.body.appendChild(s);
+    })();
+  </script>
+</body>
+</html>
